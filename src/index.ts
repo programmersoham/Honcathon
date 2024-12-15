@@ -1,9 +1,22 @@
 // // TODO : 
-// // -- Create API Endpoint for Vector Embedding Generation : Done
-// // -- Create API For RAG response : In Progress.
+// // -- Create API Endpoint for Vector Embedding Generation : Done.
+// // -- Create API For RAG response : Done.
 // // -- Connect with Telegram Webhook
 // // -- Image Generation with Telegram Web Hook Using Flux
 // // -- Store the Image in CF R2 Bucket
+
+
+// ┏┓                 
+// ┃┃╱╲ In this       
+// ┃╱╱╲╲ house        
+// ╱╱╭╮╲╲ we love     
+// ▔▏┗┛▕▔ & appreciate
+// ╱▔▔▔▔▔▔▔▔▔▔╲       
+// |   JSON   |       
+// ╱╱┏┳┓╭╮┏┳┓╲╲       
+// ▔▏┗┻┛┃┃┗┻┛▕
+
+
 
 
 import { instrument } from "@fiberplane/hono-otel";
@@ -19,6 +32,7 @@ type Bindings = {
   DATABASE_URL: string;
   AI: Ai;
   OPENAI_API_KEY: string;
+  TELEGRAM_BOT_TOKEN : string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -200,6 +214,115 @@ Assistant:
 });
 
 
+app.post("/webhook/telegram", async (c) => {
+  try {
+    const body = await c.req.json();
+
+    // Validate incoming request
+    if (!body || !body.message) {
+      return c.json({ error: "Invalid Telegram webhook payload" }, 400);
+    }
+
+    const userMessage = body.message.text;
+    const chatId = body.message.chat.id;
+
+    // Pass the user message to your chat logic
+    const chatResponse = await handleChat(userMessage,c.env);
+
+    // Send the response back to Telegram
+    const botToken = c.env.TELEGRAM_BOT_TOKEN; // Store this in your environment variables
+    const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+    const response = await fetch(telegramApiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: chatResponse,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to send message to Telegram: ${await response.text()}`);
+    }
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error("Error handling Telegram webhook:", error.message);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Handle chat logic (reuse your existing logic)
+async function handleChat(userMessage: string, env:Bindings): Promise<string> {
+  const sqlClient = neon(env.DATABASE_URL);
+    const db = drizzle(sqlClient);
+
+
+  // Step 1: Generate query embedding
+  const queryEmbeddingResponse = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
+    text: [userMessage],
+  });
+
+  const queryEmbedding = queryEmbeddingResponse.data[0];
+  if (!queryEmbedding || !Array.isArray(queryEmbedding)) {
+    throw new Error("Failed to generate query embedding or invalid response structure.");
+  }
+
+  // Convert embedding into a number array
+  const queryEmbeddingArray = queryEmbedding.map((v: number) => Number(v));
+
+  // Step 2: Cosine similarity query
+  const queryEmbeddingString = `ARRAY[${queryEmbedding.join(",")}]`;
+  const similarityCutoff = 0.5;
+  const topK = 5;
+
+  const results = await db.execute(
+    sql`
+      SELECT id, text, 
+             1 - (embedding <#> ${sql.raw(queryEmbeddingString)}::vector) AS similarity
+      FROM chunks
+      WHERE 1 - (embedding <#> ${sql.raw(queryEmbeddingString)}::vector) > ${similarityCutoff}
+      ORDER BY similarity DESC
+      LIMIT ${topK};
+    `
+  );
+
+  if (!results || results.rows.length === 0) {
+    return "I couldn't find any relevant information in the context.";
+  }
+
+  // Combine relevant chunks into a single context
+  const context = results.rows.map((row) => row.text).join("\n\n");
+
+  // Step 4: Generate response using OpenAI
+  const openai = new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    fetch: globalThis.fetch,
+  });
+
+  const completionResponse = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: `
+You are a helpful AI assistant. Use the context below to answer the user's question. 
+If you cannot find an answer, say "I don't know." 
+
+Context:
+${context}
+
+User: ${userMessage}
+Assistant:
+        `,
+      },
+    ],
+    temperature: 0.7,
+  });
+
+  return completionResponse.choices?.[0]?.message?.content || "I don't know.";
+}
 
 
 
