@@ -212,48 +212,210 @@ Assistant:
     return c.json({ error: error.message }, 500);
   }
 });
+// To track state of user interactions (simple in-memory example)
+const userStates: Record<number, string> = {};
 
 
-app.post("/webhook/telegram", async (c) => {
-  try {
-    const body = await c.req.json();
 
-    // Validate incoming request
-    if (!body || !body.message) {
-      return c.json({ error: "Invalid Telegram webhook payload" }, 400);
-    }
+app.post('/webhook/telegram', async (c) => {
+	try {
+		const body = await c.req.json();
 
-    const userMessage = body.message.text;
-    const chatId = body.message.chat.id;
+		// Extract Telegram message details
+		const message = body.message || {};
+		const chatId = message.chat?.id;
+		const userText = message.text?.trim().toLowerCase();
 
-    // Pass the user message to your chat logic
-    const chatResponse = await handleChat(userMessage,c.env);
+		// Environment setup
+		const telegramToken = c.env.TELEGRAM_BOT_TOKEN;
 
-    // Send the response back to Telegram
-    const botToken = c.env.TELEGRAM_BOT_TOKEN; // Store this in your environment variables
-    const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+		// Validate message
+		if (!chatId || !userText) {
+			return c.json({ error: 'Invalid request' });
+		}
 
-    const response = await fetch(telegramApiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: chatResponse,
-      }),
-    });
+		// Step 1: Handle "/start"
+		if (userText === '/start') {
+			await sendTelegramMessage(
+				telegramToken,
+				chatId,
+				"Welcome to Goose Bot! 🦢\nHere are your options:\n1. Ask me about geese 🪿\n2. Generate a goose image 🖼️\n3. Goose fun fact 🧠\n\nSend 'ask', 'image', or 'fact' to choose an option."
+			);
+			return c.json({ status: 'ok' });
+		}
 
-    if (!response.ok) {
-      throw new Error(`Failed to send message to Telegram: ${await response.text()}`);
-    }
+		// Step 2: "ask" command - Prompt user for a question
+		if (userText === 'ask') {
+			userStates[chatId] = 'awaiting_question'; // Set state for this user
+			await sendTelegramMessage(
+				telegramToken,
+				chatId,
+				"Great! Please ask me your question about geese. 🪿"
+			);
+			return c.json({ status: 'ok' });
+		}
 
-    return c.json({ success: true });
-  } catch (error: any) {
-    console.error("Error handling Telegram webhook:", error.message);
-    return c.json({ error: error.message }, 500);
-  }
+		// Step 3: Check if user is in "awaiting_question" state
+		if (userStates[chatId] === 'awaiting_question') {
+			delete userStates[chatId]; // Reset the state after receiving the question
+
+			// Trigger RAG pipeline with the actual user question
+			const response = await handleChat( message.text,c.env); // RAG logic
+			await sendTelegramMessage(telegramToken, chatId, response);
+			return c.json({ status: 'ok' });
+		}
+
+		// Step 4: "image" command - Generate a goose image
+		if (userText === 'image') {
+			const imageBuffer = await generateGooseImage(c);
+			await sendTelegramImage(telegramToken, chatId, imageBuffer);
+			return c.json({ status: 'ok' });
+		}
+
+		// Step 5: "fact" command - Fetch goose fun fact
+		if (userText === 'fact') {
+			const fact = await fetchGooseFunFact(c);
+			await sendTelegramMessage(telegramToken, chatId, fact);
+			return c.json({ status: 'ok' });
+		}
+
+		// Default response for unrecognized input
+		await sendTelegramMessage(
+			telegramToken,
+			chatId,
+			"Sorry, I didn't understand that. Send '/start' for options."
+		);
+		return c.json({ status: 'ok' });
+	} catch (error: any) {
+		console.error('Error handling Telegram webhook:', error.message);
+		return c.json({ error: error.message }, 500);
+	}
 });
+// app.post('/webhook/telegram', async (c) => {
+// 	try {
+// 		const body = await c.req.json();
 
-// Handle chat logic (reuse your existing logic)
+// 		// Extract Telegram message details
+// 		const message = body.message || {};
+// 		const chatId = message.chat?.id;
+// 		const userText = message.text?.trim().toLowerCase();
+
+// 		// Environment setup
+// 		const telegramToken = c.env.TELEGRAM_BOT_TOKEN;
+
+// 		// Validate message
+// 		if (!chatId || !userText) {
+// 			return c.json({ error: 'Invalid request' });
+// 		}
+
+// 		// Options for the bot
+// 		if (userText === '/start') {
+// 			await sendTelegramMessage(
+// 				telegramToken,
+// 				chatId,
+// 				"Welcome to Goose Bot! 🦢\nHere are your options:\n1. Ask me about geese 🪿\n2. Generate a goose image 🖼️\n3. Goose fun fact 🧠\n\nSend 'ask', 'image', or 'fact' to choose an option."
+// 			);
+// 			return c.json({ status: 'ok' });
+// 		}
+
+// 		// Option 1: RAG Pipeline
+// 		if (userText === 'ask') {
+// 			const response = await handleChat( message.text,c.env); 
+// 			await sendTelegramMessage(telegramToken, chatId, response);
+// 			return c.json({ status: 'ok' });
+// 		}
+
+// 		// Option 2: AI Image Generation (Generate & Return Goose Image)
+// 		if (userText === 'image') {
+// 			const imageBuffer = await generateGooseImage(c);
+// 			await sendTelegramImage(telegramToken, chatId, imageBuffer);
+// 			return c.json({ status: 'ok' });
+// 		}
+
+// 		// Option 3: Goose Fun Fact using OpenAI API
+// 		if (userText === 'fact') {
+// 			const fact = await fetchGooseFunFact(c);
+// 			await sendTelegramMessage(telegramToken, chatId, fact);
+// 			return c.json({ status: 'ok' });
+// 		}
+
+// 		// Default response
+// 		await sendTelegramMessage(
+// 			telegramToken,
+// 			chatId,
+// 			"Sorry, I didn't understand that. Send '/start' for options."
+// 		);
+// 		return c.json({ status: 'ok' });
+// 	} catch (error: any) {
+// 		console.error('Error handling Telegram webhook:', error.message);
+// 		return c.json({ error: error.message }, 500);
+// 	}
+// });
+
+async function sendTelegramMessage(token: string, chatId: number, text: string) {
+	await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			chat_id: chatId,
+			text,
+		}),
+	});
+}
+async function generateGooseImage(c: any): Promise<Uint8Array> {
+	const response = await c.env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
+		prompt: 'Please generate an image of a goose. It should be in a lake and in the style of anime.',
+	});
+
+	// Decode base64 response
+	const binaryString = atob(response.image);
+	const imgBuffer = Uint8Array.from(
+    binaryString,
+    (char) => char.codePointAt(0) || 0
+  );
+
+	// Store image in R2 bucket
+	const filePath = `geese_image_${Date.now()}.jpg`;
+	await c.env.MY_BUCKET.put(filePath, imgBuffer, {
+		httpMetadata: { contentType: 'image/jpeg' },
+	});
+
+	console.log(`Image stored at path: ${filePath}`);
+	return imgBuffer; // Return image for sending
+}
+async function sendTelegramImage(token: string, chatId: number, imgBuffer: Uint8Array) {
+	const formData = new FormData();
+	formData.append('chat_id', chatId.toString());
+	formData.append('photo', new Blob([imgBuffer], { type: 'image/jpeg' }), 'goose.jpg');
+
+	await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+		method: 'POST',
+		body: formData,
+	});
+}
+
+async function fetchGooseFunFact(c: any): Promise<string> {
+	const openai = new OpenAI({
+		apiKey: c.env.OPENAI_API_KEY,
+		fetch: globalThis.fetch,
+	});
+
+	const response = await openai.chat.completions.create({
+		model: 'gpt-4o',
+		messages: [
+			{ role: 'system', content: 'You are an assistant providing fun facts about geese.' },
+			{ role: 'user', content: 'Tell me a fun fact about geese.' },
+		],
+		temperature: 0.7,
+	});
+
+	return response.choices?.[0]?.message?.content || "Here's a fun fact about geese!";
+}
+
+
+
+
+// // Handle chat logic 
 async function handleChat(userMessage: string, env:Bindings): Promise<string> {
   const sqlClient = neon(env.DATABASE_URL);
     const db = drizzle(sqlClient);
