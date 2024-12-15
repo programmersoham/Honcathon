@@ -1,0 +1,1 @@
+ALTER TABLE "chunks" ALTER COLUMN "embedding" SET DATA TYPE vector(768);
