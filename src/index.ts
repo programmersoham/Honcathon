@@ -362,27 +362,75 @@ async function sendTelegramMessage(token: string, chatId: number, text: string) 
 		}),
 	});
 }
-async function generateGooseImage(c: any): Promise<Uint8Array> {
-	const response = await c.env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
-		prompt: 'Please generate an image of a goose. It should be in a lake and in the style of anime.',
-	});
 
-	// Decode base64 response
-	const binaryString = atob(response.image);
-	const imgBuffer = Uint8Array.from(
-    binaryString,
-    (char) => char.codePointAt(0) || 0
-  );
-
-	// Store image in R2 bucket
-	const filePath = `geese_image_${Date.now()}.jpg`;
-	await c.env.MY_BUCKET.put(filePath, imgBuffer, {
-		httpMetadata: { contentType: 'image/jpeg' },
-	});
-
-	console.log(`Image stored at path: ${filePath}`);
-	return imgBuffer; // Return image for sending
+// Utility function to generate random words for variety
+function getRandomAdjective() {
+  const adjectives = [
+    "majestic", "adorable", "colorful", "graceful", "funny", "charming", 
+    "sparkling", "vibrant", "sleepy", "mysterious", "sunlit", "dramatic"
+  ];
+  return adjectives[Math.floor(Math.random() * adjectives.length)];
 }
+
+function getRandomBackground() {
+  const backgrounds = [
+    "in a misty lake", "under a rainbow", "on a sunny pond", 
+    "in a snowy forest", "at sunset by a river", "with mountains in the background"
+  ];
+  return backgrounds[Math.floor(Math.random() * backgrounds.length)];
+}
+
+async function generateGooseImage(c: any): Promise<Uint8Array> {
+  // Create a dynamic prompt with randomness
+  const prompt = `Please generate an image of a ${getRandomAdjective()} goose ${
+    getRandomBackground()
+  }. Make it in the style of anime, and ensure it looks peaceful and artistic.`;
+
+  console.log("Generated Prompt:", prompt); // Log the dynamic prompt for debugging
+
+  // Fetch image from AI model
+  const response = await c.env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
+    prompt,
+  });
+
+  // Decode base64 image to binary
+  const binaryString = atob(response.image);
+  const imgBuffer = Uint8Array.from(binaryString, (char) => char.codePointAt(0) || 0);
+
+  // Store image in R2 bucket
+  const filePath = `geese_image_${Date.now()}.jpg`;
+  await c.env.MY_BUCKET.put(filePath, imgBuffer, {
+    httpMetadata: { contentType: 'image/jpeg' },
+  });
+
+  console.log(`Image stored at path: ${filePath}`);
+
+  return imgBuffer;
+}
+
+
+
+// async function generateGooseImage(c: any): Promise<Uint8Array> {
+// 	const response = await c.env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
+// 		prompt: 'Please generate an image of a goose. It should be in a lake and in the style of anime.',
+// 	});
+
+// 	// Decode base64 response
+// 	const binaryString = atob(response.image);
+// 	const imgBuffer = Uint8Array.from(
+//     binaryString,
+//     (char) => char.codePointAt(0) || 0
+//   );
+
+// 	// Store image in R2 bucket
+// 	const filePath = `geese_image_${Date.now()}.jpg`;
+// 	await c.env.MY_BUCKET.put(filePath, imgBuffer, {
+// 		httpMetadata: { contentType: 'image/jpeg' },
+// 	});
+
+// 	console.log(`Image stored at path: ${filePath}`);
+// 	return imgBuffer; // Return image for sending
+// }
 async function sendTelegramImage(token: string, chatId: number, imgBuffer: Uint8Array) {
 	const formData = new FormData();
 	formData.append('chat_id', chatId.toString());
