@@ -11,10 +11,14 @@
     "fiberplane": "npx @fiberplane/studio@latest"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^1.0.8",
     "@neondatabase/serverless": "^0.10.1",
+    "ai": "^4.0.18",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.4",
-    "hono": "^4.6.7"
+    "hono": "^4.6.7",
+    "openai": "^4.76.3",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",

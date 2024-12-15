@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug Hono Server",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/index.ts",
+        "args": [],
+        "skipFiles": ["<node_internals>/**"],
+        "runtimeArgs": ["--loader", "ts-node/esm"],
+        "env": {
+          "NODE_ENV": "development"
+        },
+        "sourceMaps": true,
+        "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
+        "outFiles": ["${workspaceFolder}/**/*.js"],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "name": "Attach to Hono Server",
+        "type": "node",
+        "request": "attach",
+        "port": 9229,
+        "restart": true,
+        "skipFiles": ["<node_internals>/**"],
+        "localRoot": "${workspaceFolder}",
+        "remoteRoot": "${workspaceFolder}"
+      }
+    ]
+  }
+  
